@@ -1,6 +1,6 @@
 "use client";
 
-import type { AnalyzedDocument } from "@/lib/types";
+import type { AnalyzedDocument, PersonExtraction, OrganizationExtraction } from "@/lib/types";
 import {
   Card,
   CardContent,
@@ -16,6 +16,9 @@ import {
   User,
   Hash,
   Clock,
+  Users,
+  Briefcase,
+  Mail,
 } from "lucide-react";
 
 const DOC_TYPE_STYLES: Record<string, string> = {
@@ -72,7 +75,69 @@ function ListSection({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-export function DocumentResultCard({ doc }: { doc: AnalyzedDocument }) {
+function PersonCard({ person }: { person: PersonExtraction }) {
+  return (
+    <div className="rounded-md border p-3 space-y-1.5">
+      <div className="flex items-center gap-2">
+        <User className="h-4 w-4 text-muted-foreground shrink-0" />
+        <span className="text-sm font-medium">{person.name}</span>
+      </div>
+      {person.role && (
+        <div className="flex items-center gap-2 ml-6">
+          <Briefcase className="h-3 w-3 text-muted-foreground shrink-0" />
+          <span className="text-xs text-muted-foreground">{person.role}</span>
+        </div>
+      )}
+      {person.organization && (
+        <div className="flex items-center gap-2 ml-6">
+          <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
+          <span className="text-xs text-muted-foreground">{person.organization}</span>
+        </div>
+      )}
+      {person.contact_info && (
+        <div className="flex items-center gap-2 ml-6">
+          <Mail className="h-3 w-3 text-muted-foreground shrink-0" />
+          <span className="text-xs text-muted-foreground">{person.contact_info}</span>
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground ml-6 italic">{person.context}</p>
+    </div>
+  );
+}
+
+function OrgCard({ org }: { org: OrganizationExtraction }) {
+  return (
+    <div className="rounded-md border p-3 space-y-1.5">
+      <div className="flex items-center gap-2">
+        <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+        <span className="text-sm font-medium">{org.name}</span>
+        {org.org_type && (
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+            {org.org_type}
+          </Badge>
+        )}
+      </div>
+      <p className="text-xs font-medium ml-6">{org.role_in_contract}</p>
+      <p className="text-xs text-muted-foreground ml-6 italic">{org.context}</p>
+    </div>
+  );
+}
+
+function isRichPeople(arr: unknown[]): arr is PersonExtraction[] {
+  return arr.length > 0 && typeof arr[0] === "object" && arr[0] !== null && "context" in arr[0];
+}
+
+function isRichOrgs(arr: unknown[]): arr is OrganizationExtraction[] {
+  return arr.length > 0 && typeof arr[0] === "object" && arr[0] !== null && "role_in_contract" in arr[0];
+}
+
+export function DocumentResultCard({
+  doc,
+  onAskAbout,
+}: {
+  doc: AnalyzedDocument;
+  onAskAbout?: (docId: string, docTitle: string) => void;
+}) {
   const typeStyle = DOC_TYPE_STYLES[doc.document_type] || DOC_TYPE_STYLES.other;
   const typeLabel = DOC_TYPE_LABELS[doc.document_type] || doc.document_type;
 
@@ -89,9 +154,10 @@ export function DocumentResultCard({ doc }: { doc: AnalyzedDocument }) {
     doc.response_due_date ||
     (doc.event_dates && doc.event_dates.length > 0);
 
-  const hasPeopleOrOrgs =
-    (doc.important_people && doc.important_people.length > 0) ||
-    (doc.important_organizations && doc.important_organizations.length > 0);
+  const people: unknown[] = doc.important_people || [];
+  const orgs: unknown[] = doc.important_organizations || [];
+  const richPeople = isRichPeople(people);
+  const richOrgs = isRichOrgs(orgs);
 
   return (
     <Card>
@@ -101,7 +167,7 @@ export function DocumentResultCard({ doc }: { doc: AnalyzedDocument }) {
             <CardTitle className="text-lg leading-snug">
               {doc.title}
             </CardTitle>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
               <Badge className={`border-0 ${typeStyle}`}>{typeLabel}</Badge>
               {doc.file_name && (
                 <span className="flex items-center gap-1">
@@ -120,6 +186,14 @@ export function DocumentResultCard({ doc }: { doc: AnalyzedDocument }) {
               </span>
             </div>
           </div>
+          {onAskAbout && (
+            <button
+              onClick={() => onAskAbout(doc.id, doc.title)}
+              className="shrink-0 text-xs text-primary hover:underline"
+            >
+              Ask about this
+            </button>
+          )}
         </div>
       </CardHeader>
 
@@ -201,38 +275,63 @@ export function DocumentResultCard({ doc }: { doc: AnalyzedDocument }) {
           items={doc.submission_requirements}
         />
 
-        {/* People & Organizations */}
-        {hasPeopleOrOrgs && (
-          <div className="space-y-2">
-            {doc.important_people && doc.important_people.length > 0 && (
-              <div>
-                <h4 className="text-xs text-muted-foreground mb-1">
-                  Key People
-                </h4>
-                <div className="flex flex-wrap gap-1">
-                  {doc.important_people.map((person, i) => (
-                    <Badge key={i} variant="secondary" className="text-xs">
-                      {person}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-            {doc.important_organizations &&
-              doc.important_organizations.length > 0 && (
-                <div>
-                  <h4 className="text-xs text-muted-foreground mb-1">
-                    Key Organizations
-                  </h4>
-                  <div className="flex flex-wrap gap-1">
-                    {doc.important_organizations.map((org, i) => (
-                      <Badge key={i} variant="secondary" className="text-xs">
-                        {org}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
+        {/* People — rich format */}
+        {richPeople && people.length > 0 && (
+          <div>
+            <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5">
+              <Users className="h-4 w-4" />
+              Key People
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {(people as PersonExtraction[]).map((person, i) => (
+                <PersonCard key={i} person={person} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* People — legacy string format (backward compat) */}
+        {!richPeople && people.length > 0 && (
+          <div>
+            <h4 className="text-xs text-muted-foreground mb-1">Key People</h4>
+            <div className="flex flex-wrap gap-1">
+              {(people as string[]).map((person, i) => (
+                <Badge key={i} variant="secondary" className="text-xs">
+                  {person}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Organizations — rich format */}
+        {richOrgs && orgs.length > 0 && (
+          <div>
+            <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5">
+              <Building2 className="h-4 w-4" />
+              Key Organizations
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {(orgs as OrganizationExtraction[]).map((org, i) => (
+                <OrgCard key={i} org={org} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Organizations — legacy string format (backward compat) */}
+        {!richOrgs && orgs.length > 0 && (
+          <div>
+            <h4 className="text-xs text-muted-foreground mb-1">
+              Key Organizations
+            </h4>
+            <div className="flex flex-wrap gap-1">
+              {(orgs as string[]).map((org, i) => (
+                <Badge key={i} variant="secondary" className="text-xs">
+                  {org}
+                </Badge>
+              ))}
+            </div>
           </div>
         )}
       </CardContent>

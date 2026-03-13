@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { PDFParse } from "pdf-parse";
 import { createClient } from "@/lib/supabase/server";
 import { extractDocumentInsights } from "@/lib/openai";
+import { generateEmbedding, generateEmbeddings, chunkText } from "@/lib/embeddings";
 import type { AnalyzeResponse } from "@/lib/types";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -32,7 +33,6 @@ export async function POST(request: NextRequest) {
     let fileName: string | null = null;
 
     if (file && file.size > 0) {
-      // File upload path
       if (file.size > MAX_FILE_SIZE) {
         return errorResponse("File exceeds 10MB limit", 400);
       }
@@ -42,22 +42,15 @@ export async function POST(request: NextRequest) {
       const fileExtension = file.name.split(".").pop()?.toLowerCase();
 
       if (fileType === "application/pdf" || fileExtension === "pdf") {
-        // PDF parsing with pdf-parse v2
         const arrayBuffer = await file.arrayBuffer();
         const parser = new PDFParse({ data: new Uint8Array(arrayBuffer) });
         const textResult = await parser.getText();
         rawText = textResult.text;
         await parser.destroy();
-      } else if (
-        fileType === "text/plain" ||
-        fileExtension === "txt"
-      ) {
+      } else if (fileType === "text/plain" || fileExtension === "txt") {
         rawText = await file.text();
       } else {
-        return errorResponse(
-          "Only PDF and text files are supported",
-          400
-        );
+        return errorResponse("Only PDF and text files are supported", 400);
       }
     } else if (pastedText && pastedText.trim().length > 0) {
       rawText = pastedText.trim();
@@ -65,7 +58,6 @@ export async function POST(request: NextRequest) {
       return errorResponse("Please provide text or upload a file", 400);
     }
 
-    // Validate extracted text
     rawText = rawText.trim();
     if (rawText.length === 0) {
       return errorResponse(
@@ -75,21 +67,49 @@ export async function POST(request: NextRequest) {
     }
 
     if (rawText.length > MAX_TEXT_SIZE) {
-      // Truncate but don't reject — long docs are expected
       rawText = rawText.slice(0, MAX_TEXT_SIZE);
     }
 
-    // Extract insights via OpenAI
+    // ── Step 1: Extract insights via GPT-4o ───────────────────
     const extraction = await extractDocumentInsights(rawText);
 
-    // Save to Supabase
+    // ── Step 2: Generate embeddings in parallel ───────────────
+    // Chunk the raw text for RAG retrieval
+    const chunks = chunkText(rawText);
+
+    // Generate embeddings: one for the summary (doc-level) + one per chunk
+    const textsToEmbed = [
+      `${extraction.title}. ${extraction.summary}`,
+      ...chunks,
+    ];
+    const embeddings = await generateEmbeddings(textsToEmbed);
+    const summaryEmbedding = embeddings[0];
+    const chunkEmbeddings = embeddings.slice(1);
+
+    // ── Step 3: Save document to Supabase ─────────────────────
     const { data: inserted, error: dbError } = await supabase
       .from("analyzed_documents")
       .insert({
         user_id: userId,
         file_name: fileName,
         raw_text: rawText,
-        ...extraction,
+        document_type: extraction.document_type,
+        title: extraction.title,
+        summary: extraction.summary,
+        issuing_organization: extraction.issuing_organization,
+        buyer_or_poc: extraction.buyer_or_poc,
+        solicitation_or_tracking_number: extraction.solicitation_or_tracking_number,
+        issue_date: extraction.issue_date,
+        response_due_date: extraction.response_due_date,
+        period_of_performance: extraction.period_of_performance,
+        location: extraction.location,
+        contract_type: extraction.contract_type,
+        important_people: extraction.people,
+        important_organizations: extraction.organizations,
+        event_dates: extraction.event_dates,
+        key_requirements: extraction.key_requirements,
+        submission_requirements: extraction.submission_requirements,
+        embedding: JSON.stringify(summaryEmbedding),
       })
       .select()
       .single();
@@ -97,6 +117,66 @@ export async function POST(request: NextRequest) {
     if (dbError) {
       console.error("Database insert error:", dbError);
       return errorResponse("Failed to save analysis results", 500);
+    }
+
+    const documentId = inserted.id;
+
+    // ── Step 4: Store chunks, people, orgs in parallel ────────
+    const parallelInserts = [];
+
+    // Insert chunks
+    if (chunks.length > 0) {
+      const chunkRows = chunks.map((content, i) => ({
+        document_id: documentId,
+        user_id: userId,
+        chunk_index: i,
+        content,
+        embedding: JSON.stringify(chunkEmbeddings[i]),
+      }));
+      parallelInserts.push(
+        supabase.from("document_chunks").insert(chunkRows)
+      );
+    }
+
+    // Insert people
+    if (extraction.people.length > 0) {
+      const peopleRows = extraction.people.map((p) => ({
+        document_id: documentId,
+        user_id: userId,
+        name: p.name,
+        role: p.role,
+        organization: p.organization,
+        contact_info: p.contact_info,
+        context: p.context,
+      }));
+      parallelInserts.push(
+        supabase.from("document_people").insert(peopleRows)
+      );
+    }
+
+    // Insert organizations
+    if (extraction.organizations.length > 0) {
+      const orgRows = extraction.organizations.map((o) => ({
+        document_id: documentId,
+        user_id: userId,
+        name: o.name,
+        org_type: o.org_type,
+        role_in_contract: o.role_in_contract,
+        context: o.context,
+      }));
+      parallelInserts.push(
+        supabase.from("document_organizations").insert(orgRows)
+      );
+    }
+
+    // Fire all inserts in parallel — don't block response on these
+    const results = await Promise.allSettled(parallelInserts);
+    for (const r of results) {
+      if (r.status === "rejected") {
+        console.error("Parallel insert failed:", r.reason);
+      } else if (r.value.error) {
+        console.error("Parallel insert error:", r.value.error);
+      }
     }
 
     return NextResponse.json({ success: true, document: inserted });
