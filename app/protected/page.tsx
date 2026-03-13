@@ -1,43 +1,74 @@
-import { redirect } from "next/navigation";
+"use client";
 
-import { createClient } from "@/lib/supabase/server";
-import { InfoIcon } from "lucide-react";
-import { FetchDataSteps } from "@/components/tutorial/fetch-data-steps";
-import { Suspense } from "react";
-
-async function UserDetails() {
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.getClaims();
-
-  if (error || !data?.claims) {
-    redirect("/auth/login");
-  }
-
-  return JSON.stringify(data.claims, null, 2);
-}
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { DocumentUploader } from "@/components/documents/document-uploader";
+import { DocumentResultCard } from "@/components/documents/document-result-card";
+import { DocumentHistory } from "@/components/documents/document-history";
+import { FileSearch, Upload } from "lucide-react";
+import type { AnalyzedDocument } from "@/lib/types";
 
 export default function ProtectedPage() {
+  const [activeTab, setActiveTab] = useState<"analyze" | "history">("analyze");
+  const [lastResult, setLastResult] = useState<AnalyzedDocument | null>(null);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+
+  const handleSuccess = (doc: AnalyzedDocument) => {
+    setLastResult(doc);
+    // Increment key so history refetches when user switches tab
+    setHistoryRefreshKey((k) => k + 1);
+  };
+
   return (
-    <div className="flex-1 w-full flex flex-col gap-12">
-      <div className="w-full">
-        <div className="bg-accent text-sm p-3 px-5 rounded-md text-foreground flex gap-3 items-center">
-          <InfoIcon size="16" strokeWidth={2} />
-          This is a protected page that you can only see as an authenticated
-          user
-        </div>
-      </div>
-      <div className="flex flex-col gap-2 items-start">
-        <h2 className="font-bold text-2xl mb-4">Your user details</h2>
-        <pre className="text-xs font-mono p-3 rounded border max-h-32 overflow-auto">
-          <Suspense>
-            <UserDetails />
-          </Suspense>
-        </pre>
-      </div>
+    <div className="flex-1 w-full flex flex-col gap-6">
+      {/* Header */}
       <div>
-        <h2 className="font-bold text-2xl mb-4">Next steps</h2>
-        <FetchDataSteps />
+        <h1 className="text-2xl font-bold tracking-tight">
+          Document Insight Extractor
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Upload government procurement documents and extract structured
+          insights with AI.
+        </p>
       </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2">
+        <Button
+          variant={activeTab === "analyze" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveTab("analyze")}
+        >
+          <Upload className="h-4 w-4 mr-2" />
+          Analyze
+        </Button>
+        <Button
+          variant={activeTab === "history" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveTab("history")}
+        >
+          <FileSearch className="h-4 w-4 mr-2" />
+          History
+        </Button>
+      </div>
+
+      {/* Content */}
+      {activeTab === "analyze" && (
+        <div className="space-y-6">
+          <DocumentUploader onSuccess={handleSuccess} />
+
+          {lastResult && (
+            <div>
+              <h2 className="text-lg font-semibold mb-3">Analysis Result</h2>
+              <DocumentResultCard doc={lastResult} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "history" && (
+        <DocumentHistory refreshKey={historyRefreshKey} />
+      )}
     </div>
   );
 }
