@@ -1,109 +1,200 @@
-<a href="https://demo-nextjs-with-supabase.vercel.app/">
-  <img alt="Next.js and Supabase Starter Kit - the fastest way to build apps with Next.js and Supabase" src="https://demo-nextjs-with-supabase.vercel.app/opengraph-image.png">
-  <h1 align="center">Next.js and Supabase Starter Kit</h1>
-</a>
+# Usul
 
-<p align="center">
- The fastest way to build apps with Next.js and Supabase
-</p>
+Usul is an AI-assisted government procurement document analysis app built with Next.js, Supabase, and OpenAI.
 
-<p align="center">
-  <a href="#features"><strong>Features</strong></a> ·
-  <a href="#demo"><strong>Demo</strong></a> ·
-  <a href="#deploy-to-vercel"><strong>Deploy to Vercel</strong></a> ·
-  <a href="#clone-and-run-locally"><strong>Clone and run locally</strong></a> ·
-  <a href="#feedback-and-issues"><strong>Feedback and issues</strong></a>
-  <a href="#more-supabase-examples"><strong>More Examples</strong></a>
-</p>
-<br/>
+It lets authenticated users:
 
-## Features
+- Upload or paste procurement documents
+- Extract structured contract insights
+- Store rich document metadata, people, organizations, and retrieval chunks
+- Search past documents with keyword or semantic search
+- Ask questions across one document or the full document set
 
-- Works across the entire [Next.js](https://nextjs.org) stack
-  - App Router
-  - Pages Router
-  - Proxy
-  - Client
-  - Server
-  - It just works!
-- supabase-ssr. A package to configure Supabase Auth to use cookies
-- Password-based authentication block installed via the [Supabase UI Library](https://supabase.com/ui/docs/nextjs/password-based-auth)
-- Styling with [Tailwind CSS](https://tailwindcss.com)
-- Components with [shadcn/ui](https://ui.shadcn.com/)
-- Optional deployment with [Supabase Vercel Integration and Vercel deploy](#deploy-your-own)
-  - Environment variables automatically assigned to Vercel project
+## What The App Does
 
-## Demo
+The application is optimized for procurement and contracting workflows. A user uploads a PDF or TXT file, or pastes document text. The app extracts structured fields such as:
 
-You can view a fully working demo at [demo-nextjs-with-supabase.vercel.app](https://demo-nextjs-with-supabase.vercel.app/).
+- Document type
+- Title and summary
+- Issuing organization
+- Buyer or point of contact
+- Solicitation or tracking number
+- Key dates
+- Period of performance
+- Location
+- Contract type
+- Key requirements
+- Submission requirements
+- Important people with roles, organization, contact info, and context
+- Important organizations with type, role, and context
 
-## Deploy to Vercel
+After extraction, the app stores the document and creates embeddings for:
 
-Vercel deployment will guide you through creating a Supabase account and project.
+- Document-level semantic search
+- Chunk-level retrieval for question answering
 
-After installation of the Supabase integration, all relevant environment variables will be assigned to the project so the deployment is fully functioning.
+## Tech Stack
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fnext.js%2Ftree%2Fcanary%2Fexamples%2Fwith-supabase&project-name=nextjs-with-supabase&repository-name=nextjs-with-supabase&demo-title=nextjs-with-supabase&demo-description=This+starter+configures+Supabase+Auth+to+use+cookies%2C+making+the+user%27s+session+available+throughout+the+entire+Next.js+app+-+Client+Components%2C+Server+Components%2C+Route+Handlers%2C+Server+Actions+and+Middleware.&demo-url=https%3A%2F%2Fdemo-nextjs-with-supabase.vercel.app%2F&external-id=https%3A%2F%2Fgithub.com%2Fvercel%2Fnext.js%2Ftree%2Fcanary%2Fexamples%2Fwith-supabase&demo-image=https%3A%2F%2Fdemo-nextjs-with-supabase.vercel.app%2Fopengraph-image.png)
+- Next.js App Router
+- React 19
+- TypeScript
+- Tailwind CSS
+- shadcn/ui primitives
+- Supabase Auth and Postgres
+- pgvector in Supabase
+- OpenAI for extraction, embeddings, and Q&A
 
-The above will also clone the Starter kit to your GitHub, you can clone that locally and develop locally.
+## Project Structure
 
-If you wish to just develop locally and not deploy to Vercel, [follow the steps below](#clone-and-run-locally).
+```text
+src/
+  app/                  Next.js pages and route handlers
+  components/           UI and feature components
+  lib/                  Shared utilities, types, OpenAI, Supabase, embeddings
+  proxy.ts              Auth/session proxy
+supabase/
+  migration.sql         Full schema for a fresh database
+  upgrade.sql           Safe upgrade script for an existing database
+examples/
+  documents/            Sample procurement documents for testing
+```
 
-## Clone and run locally
+Notes:
 
-1. You'll first need a Supabase project which can be made [via the Supabase dashboard](https://database.new)
+- The app uses a `src/` layout for cleaner source organization.
+- `supabase/` stays at the repository root so SQL workflows remain straightforward.
 
-2. Create a Next.js app using the Supabase Starter template npx command
+## Main User Flows
 
-   ```bash
-   npx create-next-app --example with-supabase with-supabase-app
-   ```
+### 1. Analyze a Document
 
-   ```bash
-   yarn create next-app --example with-supabase with-supabase-app
-   ```
+Route: `/protected` -> `Analyze`
 
-   ```bash
-   pnpm create next-app --example with-supabase with-supabase-app
-   ```
+- User uploads a PDF/TXT or pastes text
+- The backend extracts text if needed
+- OpenAI generates structured procurement insights
+- The app chunks the raw text and creates embeddings
+- Supabase stores the analyzed document, chunks, people, and organizations
 
-3. Use `cd` to change into the app's directory
+Key file:
 
-   ```bash
-   cd with-supabase-app
-   ```
+- `src/app/api/analyze/route.ts`
 
-4. Rename `.env.example` to `.env.local` and update the following:
+### 2. Browse and Search History
 
-  ```env
-  NEXT_PUBLIC_SUPABASE_URL=[INSERT SUPABASE PROJECT URL]
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=[INSERT SUPABASE PROJECT API PUBLISHABLE OR ANON KEY]
-  ```
-  > [!NOTE]
-  > This example uses `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, which refers to Supabase's new **publishable** key format.
-  > Both legacy **anon** keys and new **publishable** keys can be used with this variable name during the transition period. Supabase's dashboard may show `NEXT_PUBLIC_SUPABASE_ANON_KEY`; its value can be used in this example.
-  > See the [full announcement](https://github.com/orgs/supabase/discussions/29260) for more information.
+Route: `/protected` -> `History`
 
-  Both `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` can be found in [your Supabase project's API settings](https://supabase.com/dashboard/project/_?showConnect=true)
+- Keyword search uses SQL `ilike`
+- Semantic search uses pgvector document embeddings
+- If semantic RPC search is unavailable, the route falls back to keyword search
 
-5. You can now run the Next.js local development server:
+Key file:
 
-   ```bash
-   npm run dev
-   ```
+- `src/app/api/documents/route.ts`
 
-   The starter kit should now be running on [localhost:3000](http://localhost:3000/).
+### 3. Ask Questions About Documents
 
-6. This template comes with the default shadcn/ui style initialized. If you instead want other ui.shadcn styles, delete `components.json` and [re-install shadcn/ui](https://ui.shadcn.com/docs/installation/next)
+Route: `/protected` -> `Ask AI`
 
-> Check out [the docs for Local Development](https://supabase.com/docs/guides/getting-started/local-development) to also run Supabase locally.
+- The app embeds the user question
+- It tries chunk-level vector retrieval first
+- If vector retrieval is unavailable, it falls back to document-level keyword retrieval
+- Retrieved context is sent to OpenAI to generate an answer
 
-## Feedback and issues
+Key file:
 
-Please file feedback and issues over on the [Supabase GitHub org](https://github.com/supabase/supabase/issues/new/choose).
+- `src/app/api/ask/route.ts`
 
-## More Supabase examples
+## Environment Variables
 
-- [Next.js Subscription Payments Starter](https://github.com/vercel/nextjs-subscription-payments)
-- [Cookie-based Auth and the Next.js 13 App Router (free course)](https://youtube.com/playlist?list=PL5S4mPUpp4OtMhpnp93EFSo42iQ40XjbF)
-- [Supabase Auth and the Next.js App Router](https://github.com/supabase/supabase/tree/master/examples/auth/nextjs)
+Create `.env.local` with at least:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_key
+OPENAI_API_KEY=your_openai_api_key
+```
+
+## Database Setup
+
+You have two options:
+
+### New database
+
+Run:
+
+- `supabase/migration.sql`
+
+### Existing database that already has the base app data
+
+Run:
+
+- `supabase/upgrade.sql`
+
+Important:
+
+- The latest SQL includes pgvector search functions used by Ask AI and semantic search.
+- If semantic search or Ask AI is failing in Supabase, rerun `upgrade.sql`.
+
+## Local Development
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Start the dev server:
+
+```bash
+npm run dev
+```
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+## Verification Commands
+
+Useful local checks:
+
+```bash
+npm run lint
+npx tsc --noEmit
+npm run build
+```
+
+## Sample Documents
+
+Sample procurement files live in:
+
+- `examples/documents`
+
+These are useful for validating:
+
+- Extraction quality
+- Semantic search
+- Ask AI responses
+
+## Current Behavior Notes
+
+- Authentication gates the protected workspace and API routes
+- Drag-and-drop upload is supported for PDF and TXT files
+- Ask AI now falls back gracefully if vector search is unavailable
+- Semantic document search also falls back to keyword search when needed
+
+## Recommended Next Improvements
+
+- Add an `.env.example`
+- Add automated integration tests for analyze/search/ask flows
+- Add better per-route error diagnostics in the UI
+- Add document deletion and re-indexing tools
+- Add support for OCR on image-based PDFs
+
+## Additional Documentation
+
+For a full architectural walkthrough and design rationale, see:
+
+- `walkthrough.md`
