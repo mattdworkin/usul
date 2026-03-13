@@ -158,7 +158,7 @@ create index if not exists idx_document_chunks_embedding
 
 -- Search document chunks by semantic similarity (for RAG Q&A)
 create or replace function match_document_chunks(
-  query_embedding extensions.vector(1536),
+  query_embedding text,
   match_user_id uuid,
   match_document_id uuid default null,
   match_threshold float default 0.5,
@@ -182,19 +182,19 @@ begin
     dc.document_id,
     dc.chunk_index,
     dc.content,
-    1 - (dc.embedding <=> query_embedding) as similarity
+    1 - (dc.embedding <=> query_embedding::extensions.vector) as similarity
   from public.document_chunks dc
   where dc.user_id = match_user_id
     and (match_document_id is null or dc.document_id = match_document_id)
-    and 1 - (dc.embedding <=> query_embedding) > match_threshold
-  order by dc.embedding <=> query_embedding
+    and 1 - (dc.embedding <=> query_embedding::extensions.vector) > match_threshold
+  order by dc.embedding <=> query_embedding::extensions.vector
   limit match_count;
 end;
 $$;
 
 -- Search documents by semantic similarity (for document discovery)
 create or replace function match_documents(
-  query_embedding extensions.vector(1536),
+  query_embedding text,
   match_user_id uuid,
   match_threshold float default 0.5,
   match_count int default 20
@@ -223,12 +223,12 @@ begin
     ad.file_name,
     ad.issuing_organization,
     ad.created_at,
-    1 - (ad.embedding <=> query_embedding) as similarity
+    1 - (ad.embedding <=> query_embedding::extensions.vector) as similarity
   from public.analyzed_documents ad
   where ad.user_id = match_user_id
     and ad.embedding is not null
-    and 1 - (ad.embedding <=> query_embedding) > match_threshold
-  order by ad.embedding <=> query_embedding
+    and 1 - (ad.embedding <=> query_embedding::extensions.vector) > match_threshold
+  order by ad.embedding <=> query_embedding::extensions.vector
   limit match_count;
 end;
 $$;

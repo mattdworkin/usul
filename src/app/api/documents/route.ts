@@ -1,9 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { connection, NextRequest, NextResponse } from "next/server";
+import { unstable_rethrow } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { generateEmbedding } from "@/lib/embeddings";
 
 export async function GET(request: NextRequest) {
   try {
+    await connection();
+
     const supabase = await createClient();
     const { data: claimsData, error: authError } = await supabase.auth.getClaims();
 
@@ -27,16 +30,11 @@ export async function GET(request: NextRequest) {
         match_count: 20,
       });
 
+      // If vector search is unavailable, fall back to the keyword path below.
       if (error) {
-        console.error("Semantic search error:", error);
-        return NextResponse.json(
-          { error: "Semantic search failed" },
-          { status: 500 }
-        );
-      }
-
-      // Fetch full documents for matched IDs
-      if (data && data.length > 0) {
+        console.error("Semantic search error, falling back to keyword search:", error);
+      } else if (data && data.length > 0) {
+        // Fetch full documents for matched IDs
         const ids = data.map((d: { id: string }) => d.id);
         const { data: fullDocs, error: fetchError } = await supabase
           .from("analyzed_documents")
@@ -61,8 +59,6 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({ documents: ordered });
       }
-
-      return NextResponse.json({ documents: [] });
     }
 
     // Keyword search mode (default) — uses SQL ILIKE
@@ -91,6 +87,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ documents: data });
   } catch (err) {
+    unstable_rethrow(err);
     console.error("Documents fetch error:", err);
     return NextResponse.json(
       { error: "An unexpected error occurred" },

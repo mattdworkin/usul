@@ -4,6 +4,109 @@ import { generateEmbedding } from "@/lib/embeddings";
 import { answerQuestion } from "@/lib/openai";
 import type { AskResponse } from "@/lib/types";
 
+type RetrievedChunk = {
+  document_id: string;
+  content: string;
+  similarity: number;
+};
+
+type FallbackDocument = {
+  id: string;
+  title: string;
+  summary: string;
+  issuing_organization: string | null;
+  raw_text: string;
+};
+
+const COMMON_SEARCH_WORDS = new Set([
+  "about",
+  "across",
+  "again",
+  "all",
+  "and",
+  "are",
+  "can",
+  "count",
+  "documents",
+  "from",
+  "have",
+  "how",
+  "many",
+  "that",
+  "the",
+  "their",
+  "them",
+  "they",
+  "this",
+  "uploaded",
+  "what",
+  "which",
+  "with",
+  "your",
+]);
+
+function extractSearchTerms(question: string): string[] {
+  const words = question.toLowerCase().match(/[a-z0-9]{3,}/g) || [];
+  return [...new Set(words)]
+    .filter((word) => !COMMON_SEARCH_WORDS.has(word))
+    .slice(0, 6);
+}
+
+function buildKeywordFilter(terms: string[]): string {
+  return terms
+    .flatMap((term) => [
+      `title.ilike.%${term}%`,
+      `summary.ilike.%${term}%`,
+      `issuing_organization.ilike.%${term}%`,
+      `file_name.ilike.%${term}%`,
+      `raw_text.ilike.%${term}%`,
+    ])
+    .join(",");
+}
+
+async function searchDocumentsWithoutVectors(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  question: string,
+  documentId?: string
+): Promise<RetrievedChunk[]> {
+  const terms = extractSearchTerms(question);
+  let query = supabase
+    .from("analyzed_documents")
+    .select("id, title, summary, issuing_organization, raw_text")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(documentId ? 1 : 12);
+
+  if (documentId) {
+    query = query.eq("id", documentId);
+  } else if (terms.length > 0) {
+    query = query.or(buildKeywordFilter(terms));
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("Fallback document search error:", error);
+    return [];
+  }
+
+  return ((data || []) as FallbackDocument[]).map((doc) => ({
+    document_id: doc.id,
+    similarity: 0.15,
+    content: [
+      doc.title,
+      doc.issuing_organization
+        ? `Issuing Organization: ${doc.issuing_organization}`
+        : null,
+      doc.summary,
+      doc.raw_text.slice(0, 1500),
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+  }));
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -35,9 +138,10 @@ export async function POST(request: NextRequest) {
 
     // Generate embedding for the question
     const questionEmbedding = await generateEmbedding(question);
+    let chunks: RetrievedChunk[] = [];
 
     // Search for relevant chunks using vector similarity
-    const { data: chunks, error: searchError } = await supabase.rpc(
+    const { data: semanticChunks, error: searchError } = await supabase.rpc(
       "match_document_chunks",
       {
         query_embedding: JSON.stringify(questionEmbedding),
@@ -49,10 +153,21 @@ export async function POST(request: NextRequest) {
     );
 
     if (searchError) {
-      console.error("Vector search error:", searchError);
-      return NextResponse.json(
-        { error: "Failed to search documents" },
-        { status: 500 }
+      console.error("Vector search error, falling back to keyword search:", searchError);
+      chunks = await searchDocumentsWithoutVectors(
+        supabase,
+        userId,
+        question,
+        document_id
+      );
+    } else if (semanticChunks && semanticChunks.length > 0) {
+      chunks = semanticChunks as RetrievedChunk[];
+    } else {
+      chunks = await searchDocumentsWithoutVectors(
+        supabase,
+        userId,
+        question,
+        document_id
       );
     }
 

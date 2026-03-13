@@ -72,11 +72,13 @@ export function DocumentChat({
         }),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to get answer");
-      }
+      const data = (await response.json()) as AskResponse & { error?: string };
 
-      const data: AskResponse = await response.json();
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Sorry, I encountered an error. Please try again."
+        );
+      }
 
       const assistantMessage: ChatMessage = {
         role: "assistant",
@@ -84,12 +86,15 @@ export function DocumentChat({
         sources: data.sources,
       };
       setMessages((prev) => [...prev, assistantMessage]);
-    } catch {
+    } catch (error) {
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "Sorry, I encountered an error. Please try again.",
+          content:
+            error instanceof Error
+              ? error.message
+              : "Sorry, I encountered an error. Please try again.",
         },
       ]);
     } finally {

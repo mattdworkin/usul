@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { PDFParse } from "pdf-parse";
 import { createClient } from "@/lib/supabase/server";
 import { extractDocumentInsights } from "@/lib/openai";
-import { generateEmbedding, generateEmbeddings, chunkText } from "@/lib/embeddings";
+import { generateEmbeddings, chunkText } from "@/lib/embeddings";
 import type { AnalyzeResponse } from "@/lib/types";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
